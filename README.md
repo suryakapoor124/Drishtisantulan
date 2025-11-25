@@ -4,7 +4,6 @@
 
 DrishtiSantulan is a modern, AI-powered student wellbeing platform designed to bridge the gap between students and university administration. It provides a safe, anonymous space for students to reflect on their mental health while offering universities aggregated, actionable insights to improve campus life.
 
-![DrishtiSantulan Banner](https://images.unsplash.com/photo-1506126613408-eca07ce68773?q=80&w=1000&auto=format&fit=crop)
 
 ## 🚀 Features
 
