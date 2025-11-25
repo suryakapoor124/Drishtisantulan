@@ -3,7 +3,7 @@ import {
   Heart, Activity, Users, BarChart2, Settings, Sun, Moon, Wind, 
   Smile, Meh, BookOpen, ArrowRight, CheckCircle,
   Lock, RefreshCw, Zap, CloudRain, Send, CloudLightning, Sparkles,
-  Calendar, Coffee, Music, MapPin, Feather
+  Calendar, Coffee, Music, MapPin, Feather, Fingerprint
 } from 'lucide-react';
 
 // --- Configuration & Constants ---
@@ -251,11 +251,11 @@ const MoodInput = ({ label, value, onChange, min = 1, max = 5, lowLabel, highLab
     <div className="space-y-3">
         <div className="flex justify-between text-sm font-bold text-slate-600">
             <span>{label}</span>
-            <span className="text-[#6DAEDB]">{value}/{max}</span>
+            <span className="text-[#6DAEDB]">{Number(value).toFixed(1)}</span>
         </div>
         <input 
-            type="range" min={min} max={max} value={value} 
-            onChange={(e) => onChange(parseInt(e.target.value))}
+            type="range" min={min} max={max} step="0.01" value={value} 
+            onChange={(e) => onChange(parseFloat(e.target.value))}
             className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-[#6DAEDB]"
         />
         <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase tracking-wider">
@@ -724,12 +724,75 @@ const UniDash = ({ setView, adminStats, generateAiReport, isGeneratingAi, aiRepo
 const AuthScreen = ({ type, setView, handleAuth }) => {
   const [id, setId] = useState('');
   const [pass, setPass] = useState('');
+  const [error, setError] = useState('');
+  const [isBiometric, setIsBiometric] = useState(false);
   const portalLabel = type === 'admin' ? 'Admin' : 'University';
+
+  const onLogin = () => {
+      setError('');
+      const success = handleAuth(id, pass, type);
+      if (!success) {
+          setError('Invalid Credentials. Please try again.');
+      }
+  };
+
+  const handleBiometric = async () => {
+      setIsBiometric(true);
+      setError('');
+
+      if (!window.PublicKeyCredential) {
+          setIsBiometric(false);
+          setError('Biometrics not supported on this device.');
+          return;
+      }
+
+      try {
+          // Random challenge
+          const challenge = new Uint8Array(32);
+          window.crypto.getRandomValues(challenge);
+
+          // Trigger Touch ID / Face ID
+          // We use 'create' to force a platform authenticator prompt for this demo
+          await navigator.credentials.create({
+              publicKey: {
+                  challenge,
+                  rp: { name: "DrishtiSantulan" },
+                  user: {
+                      id: new Uint8Array(16),
+                      name: type === 'admin' ? "admin" : "university",
+                      displayName: type === 'admin' ? "Admin User" : "University Staff"
+                  },
+                  pubKeyCredParams: [{ alg: -7, type: "public-key" }],
+                  authenticatorSelection: {
+                      authenticatorAttachment: "platform",
+                      userVerification: "required"
+                  },
+                  timeout: 60000
+              }
+          });
+
+          // If successful, auto-login with mock credentials
+          const mockId = type === 'admin' ? 'admin123' : 'uni123';
+          const mockPass = '123';
+          handleAuth(mockId, mockPass, type);
+
+      } catch (e) {
+          console.error(e);
+          setError('Biometric authentication cancelled or failed.');
+      } finally {
+          setIsBiometric(false);
+      }
+  };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-white via-slate-50 to-slate-100 p-4 relative">
       <div className="absolute top-6 left-6 cursor-pointer text-slate-400" onClick={() => setView('landing')}><ArrowRight className="rotate-180" size={24} /></div>
-      <GlassCard className="w-full max-w-md space-y-6">
+      <GlassCard className="w-full max-w-md space-y-6 relative overflow-hidden">
+        {error && (
+            <div className="absolute top-0 left-0 w-full bg-red-500 text-white text-xs font-bold p-2 text-center animate-fade-in">
+                {error}
+            </div>
+        )}
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.4em] text-slate-400">{portalLabel} Portal</p>
           <h2 className="text-2xl font-bold text-slate-800 mt-2">Secure Access</h2>
@@ -744,7 +807,22 @@ const AuthScreen = ({ type, setView, handleAuth }) => {
             <label className="text-xs font-bold text-slate-500 uppercase">Password</label>
             <input type="password" value={pass} onChange={e => setPass(e.target.value)} className="w-full p-3 bg-slate-50 rounded-xl mt-1 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#6DAEDB]" />
           </div>
-          <button onClick={() => handleAuth(id, pass, type)} className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold mt-2 hover:bg-black">Authenticate</button>
+          <button onClick={onLogin} className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold mt-2 hover:bg-black transition-all shadow-lg">Authenticate</button>
+          
+          <div className="relative py-2">
+              <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200"></div></div>
+              <div className="relative flex justify-center text-xs uppercase"><span className="bg-white px-2 text-slate-400 font-bold tracking-widest">Or Login With</span></div>
+          </div>
+
+          <button onClick={handleBiometric} className="w-full border border-slate-200 text-slate-600 py-3 rounded-xl font-bold hover:bg-slate-50 transition-all flex items-center justify-center gap-2 group">
+              {isBiometric ? (
+                  <span className="animate-pulse text-[#6DAEDB]">Scanning...</span>
+              ) : (
+                  <>
+                    <Fingerprint size={20} className="text-slate-400 group-hover:text-[#6DAEDB] transition-colors" /> Biometric Access
+                  </>
+              )}
+          </button>
         </div>
       </GlassCard>
     </div>
@@ -828,61 +906,124 @@ const StudentAuth = ({ setView, setRecoveryKey, handleStudentLogin }) => {
   );
 };
 
-const AdminDashboard = ({ setView }) => (
-  <div className="min-h-screen bg-slate-50 p-6">
+const AdminDashboard = ({ setView, stats }) => (
+  <div className="min-h-screen bg-gradient-to-b from-[#F9FAFB] via-white to-slate-100 p-6">
       <div className="max-w-6xl mx-auto space-y-8">
           <div className="flex justify-between items-center">
-              <h1 className="text-2xl font-black text-slate-800">Admin Console</h1>
-              <button onClick={() => setView('landing')} className="text-sm font-bold text-slate-500">Logout</button>
+              <div>
+                <p className="text-xs tracking-[0.4em] text-slate-400 uppercase mb-1">System Administration</p>
+                <h1 className="text-3xl font-black text-slate-800">Admin<span className="text-[#6DAEDB]">Console</span></h1>
+              </div>
+              <button onClick={() => setView('landing')} className="inline-flex items-center gap-2 text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors">
+                <Settings size={18} /> Logout
+              </button>
           </div>
           
           <div className="grid gap-6 md:grid-cols-3">
-              <GlassCard className="border-l-4 border-green-400">
-                  <p className="text-xs font-bold uppercase text-slate-400">System Status</p>
-                  <p className="text-xl font-bold text-slate-700 mt-1">Operational</p>
-                  <p className="text-xs text-green-600 mt-2 flex items-center gap-1"><CheckCircle size={12}/> All systems normal</p>
+              <GlassCard className="relative overflow-hidden group">
+                  <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                    <Activity size={64} />
+                  </div>
+                  <p className="text-xs font-bold uppercase text-slate-400 tracking-widest">System Status</p>
+                  <div className="flex items-center gap-3 mt-2">
+                    <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse" />
+                    <p className="text-2xl font-black text-slate-700">Operational</p>
+                  </div>
+                  <p className="text-xs text-green-600 mt-2 font-bold flex items-center gap-1"><CheckCircle size={12}/> All systems normal</p>
               </GlassCard>
-              <GlassCard className="border-l-4 border-blue-400">
-                  <p className="text-xs font-bold uppercase text-slate-400">Total Users</p>
-                  <p className="text-xl font-bold text-slate-700 mt-1">1,248</p>
-                  <p className="text-xs text-slate-400 mt-2">Active this month</p>
+
+              <GlassCard className="relative overflow-hidden group">
+                  <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                    <Users size={64} />
+                  </div>
+                  <p className="text-xs font-bold uppercase text-slate-400 tracking-widest">Total Logs</p>
+                  <p className="text-2xl font-black text-slate-700 mt-2">{stats?.count || 0}</p>
+                  <p className="text-xs text-slate-400 mt-2 font-bold">Synced Student Entries</p>
               </GlassCard>
-              <GlassCard className="border-l-4 border-red-400">
-                  <p className="text-xs font-bold uppercase text-slate-400">Flagged Alerts</p>
-                  <p className="text-xl font-bold text-slate-700 mt-1">3</p>
-                  <p className="text-xs text-red-500 mt-2">Requires attention</p>
+
+              <GlassCard className="relative overflow-hidden group">
+                  <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                    <CloudLightning size={64} />
+                  </div>
+                  <p className="text-xs font-bold uppercase text-slate-400 tracking-widest">Flagged Alerts</p>
+                  <p className="text-2xl font-black text-slate-700 mt-2">0</p>
+                  <p className="text-xs text-slate-400 mt-2 font-bold">Requires attention</p>
               </GlassCard>
           </div>
 
-          <GlassCard>
-              <h3 className="font-bold text-slate-800 mb-4">User Management</h3>
-              <div className="overflow-x-auto">
-                  <table className="w-full text-sm text-left">
-                      <thead className="text-xs text-slate-400 uppercase bg-slate-50">
-                          <tr>
-                              <th className="px-4 py-3 rounded-l-lg">User Hash</th>
-                              <th className="px-4 py-3">Last Active</th>
-                              <th className="px-4 py-3">Status</th>
-                              <th className="px-4 py-3 rounded-r-lg">Action</th>
-                          </tr>
-                      </thead>
-                      <tbody className="text-slate-600">
-                          <tr className="border-b border-slate-50">
-                              <td className="px-4 py-3 font-mono">8f7a9c...</td>
-                              <td className="px-4 py-3">2 mins ago</td>
-                              <td className="px-4 py-3"><span className="bg-green-100 text-green-600 px-2 py-1 rounded text-[10px] font-bold">Active</span></td>
-                              <td className="px-4 py-3"><button className="text-slate-400 hover:text-slate-800">Reset</button></td>
-                          </tr>
-                          <tr className="border-b border-slate-50">
-                              <td className="px-4 py-3 font-mono">2b1d4e...</td>
-                              <td className="px-4 py-3">1 day ago</td>
-                              <td className="px-4 py-3"><span className="bg-red-100 text-red-600 px-2 py-1 rounded text-[10px] font-bold">Flagged</span></td>
-                              <td className="px-4 py-3"><button className="text-red-500 font-bold">Review</button></td>
-                          </tr>
-                      </tbody>
-                  </table>
-              </div>
-          </GlassCard>
+          <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
+            <GlassCard>
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                    <Users size={18} className="text-[#6DAEDB]" /> User Management
+                  </h3>
+                  <button className="text-xs font-bold text-[#6DAEDB] bg-blue-50 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-colors">
+                    Export Data
+                  </button>
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm text-left">
+                        <thead className="text-xs text-slate-400 uppercase bg-slate-50/50">
+                            <tr>
+                                <th className="px-4 py-3 rounded-l-lg">User Hash</th>
+                                <th className="px-4 py-3">Last Active</th>
+                                <th className="px-4 py-3">Status</th>
+                                <th className="px-4 py-3 rounded-r-lg">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody className="text-slate-600">
+                            <tr className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                                <td className="px-4 py-3 font-mono text-xs">8f7a9c...2b</td>
+                                <td className="px-4 py-3">Just now</td>
+                                <td className="px-4 py-3"><span className="bg-green-100 text-green-600 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider">Active</span></td>
+                                <td className="px-4 py-3"><button className="text-slate-400 hover:text-[#6DAEDB] font-bold text-xs transition-colors">Reset Key</button></td>
+                            </tr>
+                            <tr className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                                <td className="px-4 py-3 font-mono text-xs">2b1d4e...9x</td>
+                                <td className="px-4 py-3">1 day ago</td>
+                                <td className="px-4 py-3"><span className="bg-slate-100 text-slate-500 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider">Idle</span></td>
+                                <td className="px-4 py-3"><button className="text-slate-400 hover:text-[#6DAEDB] font-bold text-xs transition-colors">Reset Key</button></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </GlassCard>
+
+            <div className="space-y-6">
+              <GlassCard className="bg-slate-900 text-white border-none relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-[#6DAEDB]/10 rounded-full blur-2xl -mr-10 -mt-10"></div>
+                <h3 className="font-bold mb-4 flex items-center gap-2 relative z-10"><Lock size={18} /> Security Log</h3>
+                <div className="space-y-4 relative z-10">
+                  <div className="flex gap-3 items-start">
+                    <div className="w-1.5 h-1.5 rounded-full bg-green-400 mt-1.5"></div>
+                    <div>
+                      <p className="text-xs font-bold text-slate-300">System Backup</p>
+                      <p className="text-[10px] text-slate-500">Completed at 04:00 AM</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-3 items-start">
+                    <div className="w-1.5 h-1.5 rounded-full bg-[#6DAEDB] mt-1.5"></div>
+                    <div>
+                      <p className="text-xs font-bold text-slate-300">Admin Login</p>
+                      <p className="text-[10px] text-slate-500">New session started</p>
+                    </div>
+                  </div>
+                </div>
+              </GlassCard>
+
+              <GlassCard>
+                <h3 className="font-bold text-slate-800 mb-4 text-sm">Quick Actions</h3>
+                <div className="space-y-2">
+                  <button className="w-full text-left px-4 py-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-600 text-xs font-bold transition-colors flex justify-between items-center group">
+                    Flush Cache <RefreshCw size={14} className="text-slate-400 group-hover:rotate-180 transition-transform" />
+                  </button>
+                  <button className="w-full text-left px-4 py-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-600 text-xs font-bold transition-colors flex justify-between items-center">
+                    Generate Audit Log <ArrowRight size={14} className="text-slate-400" />
+                  </button>
+                </div>
+              </GlassCard>
+            </div>
+          </div>
       </div>
   </div>
 );
@@ -939,8 +1080,9 @@ export default function App() {
         setAdminStats(MockBackend.getAggregatedStats());
         setWeeklyReports(MockBackend.getWeeklyReports());
         setView(type === 'admin' ? 'admin-dash' : 'uni-dash');
+        return true;
     } else {
-        alert("Invalid Credentials. Try admin123/123 or uni123/123");
+        return false;
     }
   };
 
@@ -978,7 +1120,7 @@ export default function App() {
     case 'admin-auth': 
       return <AuthScreen type="admin" setView={setView} handleAuth={handleAuth} />;
     case 'admin-dash': 
-      return <AdminDashboard setView={setView} />;
+      return <AdminDashboard setView={setView} stats={adminStats} />;
     default: 
       return <LandingPage setView={setView} />;
   }
