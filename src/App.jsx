@@ -62,7 +62,7 @@ const SUGGESTIONS = {
   }
 };
 
-const apiKey = "AIzaSyCNmcKiq8dxQty1ZNf3RKfEFEYdmaT9OQA"; // API Key injected by environment
+const apiKey = "AIzaSyAp_b0_oIlwvSdo2O6BUpI4lXbC0z_1KNc"; // API Key injected by environment
 
 // --- Mock Backend Simulation (SQLite Replacement) ---
 
@@ -75,18 +75,24 @@ const MockBackend = {
 
   syncData: (studentLogs) => {
     const existingData = JSON.parse(localStorage.getItem('campus_pulse_data') || '[]');
-    const updatedData = [...existingData, ...studentLogs];
+    
+    // Prevent duplicates by checking timestamps
+    const existingTimestamps = new Set(existingData.map(d => d.timestamp));
+    const newLogs = studentLogs.filter(l => !existingTimestamps.has(l.timestamp));
+    
+    if (newLogs.length === 0) return true;
+
+    const updatedData = [...existingData, ...newLogs];
     localStorage.setItem('campus_pulse_data', JSON.stringify(updatedData));
     
     // Generate Weekly Report Simulation
     const reports = JSON.parse(localStorage.getItem('weekly_reports') || '[]');
-    // In a real app, this would run on a cron job. Here we simulate it on sync.
-    if (studentLogs.length > 0) {
-        const lastLog = studentLogs[studentLogs.length - 1];
+    if (newLogs.length > 0) {
+        const lastLog = newLogs[newLogs.length - 1];
         const newReport = {
             id: Date.now(),
             week_start: new Date().toLocaleDateString(),
-            student_id_hash: Math.random().toString(36).substring(7), // Anonymous ID
+            student_id_hash: Math.random().toString(36).substring(7),
             trend_summary: `Student shows fluctuating mood with ${lastLog.sentiment || 'Neutral'} tendencies.`,
             dominant_emotion: lastLog.sentiment || 'Neutral',
             stress_peak: lastLog.stress > 3,
@@ -108,13 +114,15 @@ const MockBackend = {
 
   getAggregatedStats: () => {
     const data = JSON.parse(localStorage.getItem('campus_pulse_data') || '[]');
-    if (data.length === 0) return { avgMood: 0, count: 0, topStressor: 'None' };
+    const validData = data.filter(d => d && typeof d.mood === 'number' && !isNaN(d.mood));
+    
+    if (validData.length === 0) return { avgMood: 0, count: 0, topStressor: 'None' };
 
-    const totalMood = data.reduce((acc, curr) => acc + curr.mood, 0);
-    const avgMood = (totalMood / data.length).toFixed(1);
+    const totalMood = validData.reduce((acc, curr) => acc + curr.mood, 0);
+    const avgMood = (totalMood / validData.length).toFixed(1);
     
     // Find top sentiment
-    const sentiments = data.map(d => d.sentiment).filter(Boolean);
+    const sentiments = validData.map(d => d.sentiment).filter(Boolean);
     const counts = {};
     let topStressor = 'None';
     let maxCount = 0;
@@ -127,7 +135,7 @@ const MockBackend = {
       }
     }
 
-    return { avgMood, count: data.length, topStressor };
+    return { avgMood, count: validData.length, topStressor };
   }
 };
 
@@ -171,8 +179,9 @@ const GeminiService = {
   },
 
   generateWeeklyReport: async (campusData) => {
-    const fallback = { trend: "Data insufficient", stressor: "None", intervention: "Wait for more data" };
-    if (!campusData.length) return fallback;
+    if (!campusData || campusData.length === 0) {
+        return { trend: "No Data Available", stressor: "None", intervention: "Students must sync logs first." };
+    }
 
     const summary = campusData.slice(-20).map(d => `Mood:${d.mood}, Stress:${d.stress}, Sentiment:${d.sentiment}`).join('\n');
     const prompt = `
@@ -195,8 +204,22 @@ const GeminiService = {
             }
         );
         const data = await response.json();
+        
+        if (data.error) {
+            console.error("Gemini API Error:", data.error);
+            return { trend: "API Error", stressor: "Check Console", intervention: data.error.message || "Service Unavailable" };
+        }
+
+        if (!data.candidates || !data.candidates[0]?.content) {
+             console.error("Unexpected API Response:", data);
+             return { trend: "Analysis Failed", stressor: "Invalid Response", intervention: "Try again later" };
+        }
+
         return JSON.parse(data.candidates?.[0]?.content?.parts?.[0]?.text);
-    } catch (e) { return fallback; }
+    } catch (e) { 
+        console.error("Report Generation Failed:", e);
+        return { trend: "Connection Failed", stressor: "Network Error", intervention: "Check internet connection" }; 
+    }
   }
 };
 
